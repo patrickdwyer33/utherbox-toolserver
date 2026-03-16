@@ -35,13 +35,16 @@ LATEST=$(AWS_ACCESS_KEY_ID="$S3_ACCESS" AWS_SECRET_ACCESS_KEY="$S3_SECRET" \
   aws s3 cp "s3://${S3_BUCKET}/latest.json" - --endpoint-url "$S3_ENDPOINT")
 VM_VER=$(echo "$LATEST" | jq -r '."vm-mcp"')
 DNS_VER=$(echo "$LATEST" | jq -r '."dns-mcp"')
+UPDATE_VER=$(echo "$LATEST" | jq -r '."update-mcp-binaries"')
 
-if [[ "$VM_VER" == "null" || -z "$VM_VER" || "$DNS_VER" == "null" || -z "$DNS_VER" ]]; then
-  echo "ERROR: latest.json is missing vm-mcp or dns-mcp version" >&2
+if [[ "$VM_VER" == "null" || -z "$VM_VER" || \
+      "$DNS_VER" == "null" || -z "$DNS_VER" || \
+      "$UPDATE_VER" == "null" || -z "$UPDATE_VER" ]]; then
+  echo "ERROR: latest.json is missing vm-mcp, dns-mcp, or update-mcp-binaries version" >&2
   exit 1
 fi
 
-echo "Installing vm-mcp@${VM_VER} dns-mcp@${DNS_VER}"
+echo "Installing vm-mcp@${VM_VER} dns-mcp@${DNS_VER} update-mcp-binaries@${UPDATE_VER}"
 
 # ---------------------------------------------------------------------------
 # 3. Download, verify checksum, and install each binary
@@ -85,18 +88,12 @@ download_and_install() {
   echo "${name} installed at ${dest} (setuid, symlinked from /usr/local/bin/${name})"
 }
 
-download_and_install vm-mcp  "$VM_VER"
-download_and_install dns-mcp "$DNS_VER"
+download_and_install vm-mcp              "$VM_VER"
+download_and_install dns-mcp             "$DNS_VER"
+download_and_install update-mcp-binaries "$UPDATE_VER"
 
 # ---------------------------------------------------------------------------
-# 4. Install the update script
-# ---------------------------------------------------------------------------
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-install -o toolserver -g toolserver -m 755 "$SCRIPT_DIR/update-mcp-binaries.sh" \
-  /usr/local/bin/update-mcp-binaries
-
-# ---------------------------------------------------------------------------
-# 5. Systemd service + timer: run as toolserver on boot and daily
+# 4. Systemd service + timer: run as toolserver on boot and daily
 # ---------------------------------------------------------------------------
 cat > /etc/systemd/system/utherbox-update-mcp.service << 'EOF'
 [Unit]
@@ -105,7 +102,7 @@ Description=Update Utherbox MCP binaries
 [Service]
 Type=oneshot
 User=toolserver
-ExecStart=/bin/bash /usr/local/bin/update-mcp-binaries
+ExecStart=/usr/local/bin/update-mcp-binaries
 StandardOutput=journal
 StandardError=journal
 EOF

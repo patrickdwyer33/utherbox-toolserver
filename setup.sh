@@ -80,4 +80,42 @@ download_and_install() {
 download_and_install vm-mcp  "$VM_VER"
 download_and_install dns-mcp "$DNS_VER"
 
+# ---------------------------------------------------------------------------
+# 4. Install the update script
+# ---------------------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+install -o toolserver -g toolserver -m 755 "$SCRIPT_DIR/update-mcp-binaries.sh" \
+  /usr/local/bin/update-mcp-binaries
+
+# ---------------------------------------------------------------------------
+# 5. Systemd service + timer: run as toolserver on boot and daily
+# ---------------------------------------------------------------------------
+cat > /etc/systemd/system/utherbox-update-mcp.service << 'EOF'
+[Unit]
+Description=Update Utherbox MCP binaries
+
+[Service]
+Type=oneshot
+User=toolserver
+ExecStart=/bin/bash /usr/local/bin/update-mcp-binaries
+StandardOutput=journal
+StandardError=journal
+EOF
+
+cat > /etc/systemd/system/utherbox-update-mcp.timer << 'EOF'
+[Unit]
+Description=Update Utherbox MCP binaries on boot and daily
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=24h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now utherbox-update-mcp.timer
+
 echo "utherbox-toolserver setup complete"

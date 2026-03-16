@@ -46,10 +46,17 @@ echo "Installing vm-mcp@${VM_VER} dns-mcp@${DNS_VER}"
 # ---------------------------------------------------------------------------
 # 3. Download, verify checksum, and install each binary
 # ---------------------------------------------------------------------------
+# Binaries live in /home/toolserver/bin/ (toolserver-owned) so that the update
+# script can atomically replace them with rename() while they are running.
+# /usr/local/bin/{name} is a symlink into this directory.
+mkdir -p /home/toolserver/bin
+chown toolserver:toolserver /home/toolserver/bin
+chmod 755 /home/toolserver/bin
+
 download_and_install() {
   local name="$1"
   local version="$2"
-  local dest="/usr/local/bin/${name}"
+  local dest="/home/toolserver/bin/${name}"
   local tmp="${dest}.tmp"
 
   echo "Downloading ${name}@${version}..."
@@ -74,7 +81,8 @@ download_and_install() {
   mv "$tmp" "$dest"
   chown toolserver:toolserver "$dest"
   chmod 4755 "$dest"   # setuid: executes as toolserver when spawned by claude
-  echo "${name} installed at ${dest} (setuid)"
+  ln -sf "$dest" "/usr/local/bin/${name}"
+  echo "${name} installed at ${dest} (setuid, symlinked from /usr/local/bin/${name})"
 }
 
 download_and_install vm-mcp  "$VM_VER"

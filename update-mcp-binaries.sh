@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 # update-mcp-binaries.sh
 # Downloads and installs the latest vm-mcp and dns-mcp binaries from S3.
-# Must run as toolserver (or root) — reads ~/.credentials.json and overwrites
-# /usr/local/bin/{vm-mcp,dns-mcp} which are owned by toolserver.
+# Must run as toolserver (or root) — reads ~/.credentials.json.
+#
+# Binaries are installed to /home/toolserver/bin/ (toolserver-owned) and
+# atomically replaced with mv (rename), which avoids ETXTBSY even when
+# the currently-running binary is being replaced.
+# /usr/local/bin/{name} symlinks into /home/toolserver/bin/.
 set -euo pipefail
 
 CREDS_FILE="/home/toolserver/.credentials.json"
+BIN_DIR="/home/toolserver/bin"
 
 S3_ENDPOINT=$(jq -r '.s3_endpoint' "$CREDS_FILE")
 S3_BUCKET=$(jq -r '.s3_bucket_binaries // "utherbox-binaries"' "$CREDS_FILE")
@@ -34,8 +39,8 @@ echo "Updating to vm-mcp@${VM_VER} dns-mcp@${DNS_VER}"
 update_binary() {
   local name="$1"
   local version="$2"
-  local dest="/usr/local/bin/${name}"
-  local tmp="/tmp/${name}.update"
+  local dest="${BIN_DIR}/${name}"
+  local tmp="${dest}.tmp"
 
   echo "Downloading ${name}@${version}..."
   AWS_ACCESS_KEY_ID="$S3_ACCESS" AWS_SECRET_ACCESS_KEY="$S3_SECRET" \
@@ -56,11 +61,10 @@ update_binary() {
     exit 1
   fi
 
-  # Overwrite in-place: toolserver owns the destination files and can write to
-  # them even though /usr/local/bin/ is root-owned (directory write not needed).
-  cat "$tmp" > "$dest"
-  chmod 4755 "$dest"
-  rm -f "$tmp"
+  chmod 4755 "$tmp"
+  # Atomic rename — avoids ETXTBSY on the running binary. The old inode stays
+  # open in any running process; the new inode is used on the next exec.
+  mv "$tmp" "$dest"
   echo "${name} updated to ${version}"
 }
 

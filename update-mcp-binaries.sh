@@ -3,14 +3,14 @@
 # Downloads and installs the latest vm-mcp and dns-mcp binaries from S3.
 # Must run as toolserver (or root) — reads ~/.credentials.json.
 #
-# Binaries are installed to /home/toolserver/bin/ (toolserver-owned) and
+# Binaries are installed to /var/lib/utherbox/bin/ (toolserver-owned) and
 # atomically replaced with mv (rename), which avoids ETXTBSY even when
 # the currently-running binary is being replaced.
-# /usr/local/bin/{name} symlinks into /home/toolserver/bin/.
+# /usr/local/bin/{name} symlinks into /var/lib/utherbox/bin/.
 set -euo pipefail
 
 CREDS_FILE="/home/toolserver/.credentials.json"
-BIN_DIR="/home/toolserver/bin"
+BIN_DIR="/var/lib/utherbox/bin"
 
 S3_ENDPOINT=$(jq -r '.s3_endpoint' "$CREDS_FILE")
 S3_BUCKET=$(jq -r '.s3_bucket_binaries // "utherbox-binaries"' "$CREDS_FILE")

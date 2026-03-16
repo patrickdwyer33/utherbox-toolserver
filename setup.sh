@@ -46,17 +46,17 @@ echo "Installing vm-mcp@${VM_VER} dns-mcp@${DNS_VER}"
 # ---------------------------------------------------------------------------
 # 3. Download, verify checksum, and install each binary
 # ---------------------------------------------------------------------------
-# Binaries live in /home/toolserver/bin/ (toolserver-owned) so that the update
+# Binaries live in /var/lib/utherbox/bin/ (toolserver-owned) so that the update
 # script can atomically replace them with rename() while they are running.
 # /usr/local/bin/{name} is a symlink into this directory.
-mkdir -p /home/toolserver/bin
-chown toolserver:toolserver /home/toolserver/bin
-chmod 755 /home/toolserver/bin
+mkdir -p /var/lib/utherbox/bin
+chown toolserver:toolserver /var/lib/utherbox/bin
+chmod 755 /var/lib/utherbox/bin
 
 download_and_install() {
   local name="$1"
   local version="$2"
-  local dest="/home/toolserver/bin/${name}"
+  local dest="/var/lib/utherbox/bin/${name}"
   local tmp="${dest}.tmp"
 
   echo "Downloading ${name}@${version}..."

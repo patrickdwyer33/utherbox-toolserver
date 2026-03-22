@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # utherbox-toolserver/setup.sh
 # Runs as root via cloud-init on each new project VM, AFTER setup-privileged.sh.
-# Scope: download and install MCP binaries from S3.
+# Scope: download and install MCP binaries via the platform API.
 #
 # Prerequisites (handled by cloud-init's setup-privileged.sh, which runs first):
 #   - toolserver and claude users created
@@ -14,25 +14,22 @@ set -euo pipefail
 CREDS_FILE="/home/toolserver/.credentials.json"
 
 # ---------------------------------------------------------------------------
-# 1. Parse S3 credentials for binary download
+# 1. Parse platform API credentials
 # ---------------------------------------------------------------------------
-S3_ENDPOINT=$(jq -r '.s3_endpoint' "$CREDS_FILE")
-S3_BUCKET=$(jq -r '.s3_bucket_binaries // "utherbox-binaries"' "$CREDS_FILE")
-S3_ACCESS=$(jq -r '.s3_access_key' "$CREDS_FILE")
-S3_SECRET=$(jq -r '.s3_secret_key' "$CREDS_FILE")
+PLATFORM_API_TOKEN=$(jq -r '.platform_api_token' "$CREDS_FILE")
+PLATFORM_API_BASE=$(jq -r '.platform_api_base_url' "$CREDS_FILE")
 
-if [[ "$S3_ENDPOINT" == "null" || -z "$S3_ENDPOINT" || \
-      "$S3_ACCESS" == "null"   || -z "$S3_ACCESS"   || \
-      "$S3_SECRET" == "null"   || -z "$S3_SECRET" ]]; then
-  echo "ERROR: credentials.json is missing required S3 fields" >&2
+if [[ "$PLATFORM_API_TOKEN" == "null" || -z "$PLATFORM_API_TOKEN" || \
+      "$PLATFORM_API_BASE" == "null"   || -z "$PLATFORM_API_BASE" ]]; then
+  echo "ERROR: credentials.json is missing required fields: platform_api_token, platform_api_base_url" >&2
   exit 1
 fi
 
 # ---------------------------------------------------------------------------
 # 2. Fetch latest binary versions
 # ---------------------------------------------------------------------------
-LATEST=$(AWS_ACCESS_KEY_ID="$S3_ACCESS" AWS_SECRET_ACCESS_KEY="$S3_SECRET" \
-  aws s3 cp "s3://${S3_BUCKET}/latest.json" - --endpoint-url "$S3_ENDPOINT")
+LATEST=$(curl -sf -H "Authorization: Bearer ${PLATFORM_API_TOKEN}" \
+  "${PLATFORM_API_BASE}/binaries/latest.json")
 VM_VER=$(echo "$LATEST" | jq -r '."vm-mcp"')
 DNS_VER=$(echo "$LATEST" | jq -r '."dns-mcp"')
 UPDATE_VER=$(echo "$LATEST" | jq -r '."update-mcp-binaries"')
@@ -63,14 +60,12 @@ download_and_install() {
   local tmp="${dest}.tmp"
 
   echo "Downloading ${name}@${version}..."
-  AWS_ACCESS_KEY_ID="$S3_ACCESS" AWS_SECRET_ACCESS_KEY="$S3_SECRET" \
-    aws s3 cp "s3://${S3_BUCKET}/${name}/${version}/${name}" "$tmp" \
-    --endpoint-url "$S3_ENDPOINT"
+  curl -sf -H "Authorization: Bearer ${PLATFORM_API_TOKEN}" \
+    "${PLATFORM_API_BASE}/binaries/${name}/${version}" -o "$tmp"
 
   local expected actual
-  expected=$(AWS_ACCESS_KEY_ID="$S3_ACCESS" AWS_SECRET_ACCESS_KEY="$S3_SECRET" \
-    aws s3 cp "s3://${S3_BUCKET}/${name}/${version}/${name}.sha256" - \
-    --endpoint-url "$S3_ENDPOINT")
+  expected=$(curl -sf -H "Authorization: Bearer ${PLATFORM_API_TOKEN}" \
+    "${PLATFORM_API_BASE}/binaries/${name}/${version}/checksum")
   actual=$(sha256sum "$tmp" | awk '{print $1}')
 
   if [[ "$expected" != "$actual" ]]; then

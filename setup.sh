@@ -9,6 +9,7 @@
 #   - /var/lib/utherbox/certs/ created (755, toolserver:toolserver)
 #   - SSH hardened, claude sudoers removed
 set -euo pipefail
+trap 'rm -f /var/lib/utherbox/bin/*.tmp 2>/dev/null || true' EXIT
 
 # credentials.json is pre-installed by setup-privileged.sh; root can read it.
 CREDS_FILE="/home/toolserver/.credentials.json"
@@ -20,15 +21,25 @@ PLATFORM_API_TOKEN=$(jq -r '.platform_api_token' "$CREDS_FILE")
 PLATFORM_API_BASE=$(jq -r '.platform_api_base_url' "$CREDS_FILE")
 
 if [[ "$PLATFORM_API_TOKEN" == "null" || -z "$PLATFORM_API_TOKEN" || \
-      "$PLATFORM_API_BASE" == "null"   || -z "$PLATFORM_API_BASE" ]]; then
-  echo "ERROR: credentials.json is missing required fields: platform_api_token, platform_api_base_url" >&2
+      "$PLATFORM_API_BASE" == "null"  || -z "$PLATFORM_API_BASE" ]]; then
+  echo "ERROR: credentials.json is missing platform_api_token or platform_api_base_url" >&2
+  exit 1
+fi
+
+# Validate format before use
+if [[ ! "$PLATFORM_API_TOKEN" =~ ^utbx_[0-9a-f]{64}$ ]]; then
+  echo "ERROR: platform_api_token has unexpected format" >&2
+  exit 1
+fi
+if [[ "$PLATFORM_API_BASE" != https://* ]]; then
+  echo "ERROR: platform_api_base_url must begin with https://" >&2
   exit 1
 fi
 
 # ---------------------------------------------------------------------------
 # 2. Fetch latest binary versions
 # ---------------------------------------------------------------------------
-LATEST=$(curl -sf -H "Authorization: Bearer ${PLATFORM_API_TOKEN}" \
+LATEST=$(curl -sf --max-time 60 -H "Authorization: Bearer ${PLATFORM_API_TOKEN}" \
   "${PLATFORM_API_BASE}/binaries/latest.json")
 VM_VER=$(echo "$LATEST" | jq -r '."vm-mcp"')
 DNS_VER=$(echo "$LATEST" | jq -r '."dns-mcp"')
@@ -56,15 +67,21 @@ chmod 755 /var/lib/utherbox/bin
 download_and_install() {
   local name="$1"
   local version="$2"
+
+  if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "ERROR: unexpected version format for ${name}: ${version}" >&2
+    exit 1
+  fi
+
   local dest="/var/lib/utherbox/bin/${name}"
   local tmp="${dest}.tmp"
 
   echo "Downloading ${name}@${version}..."
-  curl -sf -H "Authorization: Bearer ${PLATFORM_API_TOKEN}" \
+  curl -sf --max-time 60 -H "Authorization: Bearer ${PLATFORM_API_TOKEN}" \
     "${PLATFORM_API_BASE}/binaries/${name}/${version}" -o "$tmp"
 
   local expected actual
-  expected=$(curl -sf -H "Authorization: Bearer ${PLATFORM_API_TOKEN}" \
+  expected=$(curl -sf --max-time 60 -H "Authorization: Bearer ${PLATFORM_API_TOKEN}" \
     "${PLATFORM_API_BASE}/binaries/${name}/${version}/checksum")
   actual=$(sha256sum "$tmp" | awk '{print $1}')
 
